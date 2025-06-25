@@ -146,7 +146,7 @@ def trainModel(model):
         tuned_model, best_params, tuned_obj = tune_model(model, param_grid, X_train, y_train, operation = data['tuning'])
         
         buffer = io.BytesIO()
-        ClassificationTuning.visualize_results(tuned_obj, param_name='n_estimators', buffer = buffer)  # Change this param based on model
+        ClassificationTuning.visualize_results(tuned_obj, param_name='C', buffer = buffer)  # Change this param based on model
         buffer.seek(0)
 
         # ClassificationTuning.logger(str(tuned_model), best_params)
@@ -209,7 +209,8 @@ def runModel(model):
         return send_file(csv_buffer, download_name = 'predicted.csv', as_attachment = True, mimetype = 'text/csv')
     
     elif model == 'classification':
-        input = pd.read_csv(request.files['input'])
+        input = pd.read_csv(request.files['input'],encoding = 'utf-8', on_bad_lines='skip')
+        print(input.columns)
         input['Predicted Values'] = models['classification'].predict(input)
         csv_buffer = io.BytesIO()
         input.to_csv(csv_buffer, index = False)
@@ -485,3 +486,6 @@ def download_file():
         as_attachment=True,
         download_name='preprocessed_dataset.csv'
     )
+
+if __name__ == '__main__':
+    app.run(debug=True)

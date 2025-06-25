@@ -51,7 +51,7 @@ def tune_model(model, param_grid, X_train, y_train, scoring='accuracy', operatio
 tuned_model, best_params, tuned_obj = tune_model(model, param_grid, X_train, y_train, operation='RandomizedSearchCV')
 
 # Visualize results
-visualize_results(tuned_obj, param_name='n_estimators')  # Change this param based on model
+visualize_results(tuned_obj, param_name='C')  # Change this param based on model
 
 # Log best params
 logger(str(tuned_model), best_params)

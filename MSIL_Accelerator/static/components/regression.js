@@ -57,7 +57,7 @@ function Regression() {
     }
 
     return(
-        <form>
+        <form className='regression-form'>
             <input type = "file" id = "regressionTrainFile"/>
             <input type = "button" value = "Upload" onClick = {uploadFile}/><br /><br />
             <label>Use data from EDA: </label><input type = "checkbox" onChange = {useEDA}/><br /><br />

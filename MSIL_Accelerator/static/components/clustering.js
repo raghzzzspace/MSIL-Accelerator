@@ -36,7 +36,7 @@ function Clustering() {
     }
 
     return(
-        <form>
+        <form className='clustering-form'>
             <input type = "file" id = "clusteringTrainFile"/>
             <input type = "button" value = "Upload" onClick = {uploadFile}/><br /><br />
             <label>Use data from EDA: </label><input type = "checkbox" onChange = {useEDA}/><br /><br />

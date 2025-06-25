@@ -57,7 +57,7 @@ function Classification() {
     }
 
     return(
-        <form>
+        <form className="classification-form">
             <input type = "file" id = "classificationTrainFile"/>
             <input type = "button" value = "Upload" onClick = {uploadFile}/><br /><br />
             <label>Use data from EDA: </label><input type = "checkbox" onChange = {useEDA}/><br /><br />

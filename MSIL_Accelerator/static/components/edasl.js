@@ -1286,9 +1286,10 @@ function ManualFeatureSelector() {
         setSelectedTarget(e.target.value);
     }
 
-    return (<> {newCols ?
+    return (<> 
+    <h3 className="text-xl font-semibold mb-4">Manual Feature Selection</h3>
+    {newCols ?
         <div className="mt-10 variate-ui">
-            <h3 className="text-xl font-semibold mb-4">Manual Feature Selection</h3>
 
             <div className="mb-4">
                 <label className="block mb-2 font-medium">Select Target Column:</label>
