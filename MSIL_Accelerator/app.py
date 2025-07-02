@@ -231,6 +231,21 @@ def runModel(model):
         input.to_csv(csv_buffer, index = False)
         csv_buffer.seek(0)
         return send_file(csv_buffer, download_name = 'predicted.csv', as_attachment = True, mimetype = 'text/csv')
+
+@app.post('/detect_column_type')
+def detect_column_type():
+    global df
+    req = request.get_json()
+    column = req.get("column")
+    
+    if df['edasl'] is None or column not in df['edasl'].columns:
+        return {"error": "Invalid column or no data uploaded"}, 400
+    
+    # Check if column is numerical
+    if df['edasl'][column].dtype in ['int64', 'float64', 'int32', 'float32']:
+        return {"type": "numerical"}
+    else:
+        return {"type": "categorical"}
     
 @app.post('/univariate')
 def univariate():
