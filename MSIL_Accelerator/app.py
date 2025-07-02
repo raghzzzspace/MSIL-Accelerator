@@ -2,6 +2,21 @@ from flask import Flask, redirect, url_for, request, Response, send_file
 from eda import EDA
 import pandas as pd
 import numpy as np
+from flask import Flask, request, Response, send_file
+import pandas as pd
+import io
+from TS.TS import (
+    perform_time_series_eda,
+    preprocess_time_series,
+    get_model,
+    hyperparams,
+    tune_model,
+    forecast_metrics,
+    visualize_results,
+    logger
+)
+from requests_toolbelt.multipart import MultipartEncoder
+import json
 from Regressor.utils.metrics import regression_metrics
 from Regressor.utils.data_split import train_test_split_data
 import Regressor.models.trainer as RegressionModel
@@ -486,6 +501,72 @@ def download_file():
         as_attachment=True,
         download_name='preprocessed_dataset.csv'
     )
+@app.post('/train/timeseries')
+def train_timeseries():
+    global df
+    data = request.get_json(force=True)
+    datetime_col = data['datetime_col']
+    target_col = data['target_col']
+    model_name = data['model']
+    #tuning_strategy = data['tuning']
+
+    try:
+        if df['timeseries'] is None:
+            return {"error": "No time series dataset uploaded"}, 400
+
+        df_raw = df['timeseries'].copy()
+        df_eda = perform_time_series_eda(df_raw.copy(), datetime_col, target_col)
+
+        df_processed = preprocess_time_series(df_raw, datetime_col, target_col)
+
+        X = df_processed.drop(columns=[target_col, datetime_col])
+        y = df_processed[target_col]
+
+        test_size = 30
+        X_train, X_test = X[:-test_size], X[-test_size:]
+        y_train, y_test = y[:-test_size], y[-test_size:]
+
+        model = get_model(model_name)
+        param_grid = hyperparams(model_name)
+
+        if len(X_train) < 3 or len(param_grid) == 0:
+            tuned_model = model
+            best_params = model.get_params() if hasattr(model, 'get_params') else {}
+            tuned_obj = None
+        else:
+            tuned_model, best_params, tuned_obj = tune_model(
+                model, param_grid, X_train, y_train,
+                operation='RandomizedSearchCV',
+                cv=min(3, len(X_train))
+            )
+
+        tuned_model.fit(X_train, y_train)
+        y_pred = tuned_model.predict(X_test)
+
+        metrics = forecast_metrics(y_test, y_pred)
+        metrics['num'] = 1
+
+        buffer = io.BytesIO()
+        visualize_results(tuned_obj)
+        buffer.seek(0)
+
+        m = MultipartEncoder(fields={
+            'metrics': json.dumps(metrics),
+            'graph': ('forecastGraph.png', buffer, 'image/png')
+        })
+        return Response(m.to_string(), mimetype=m.content_type)
+
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.post('/upload/timeseries')
+def upload_timeseries():
+    global df
+    try:
+        df['timeseries'] = pd.read_csv(request.files['dataset'])
+        return {'cols': df['timeseries'].columns.tolist()}
+    except Exception as e:
+        return {'error': str(e)}, 500
 
 if __name__ == '__main__':
     app.run(debug=True)
