@@ -20,6 +20,28 @@ function EDASL() {
         informer(result);
     }
 
+    // Detect column data type automatically
+    async function detectColumnType(column) {
+        const response = await fetch('/detect_column_type', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ column })
+        });
+        const result = await response.json();
+        return result.type;
+    }
+
+    // Handle column selection and auto-detect data type
+    async function handleColumnChange(column) {
+        setSelectedColumn(column);
+        
+        if (column) {
+            const detectedType = await detectColumnType(column);
+            setDataType(detectedType);
+            setPlotType(detectedType === 'categorical' ? 'countplot' : 'histogram');
+        }
+    }
+
     // Generate Univariate Plot
     async function generateUnivariatePlot() {
         const response = await fetch('/univariate', {
@@ -100,26 +122,24 @@ function EDASL() {
             </div>
 
             {information && <Details info={information} />}
-
             {/* === Univariate Analysis Section === */}
             {information &&
                 <div className="variate-ui">
                     <h3 className="font-semibold text-lg">Univariate Analysis</h3>
 
-                    <select value={selectedColumn} onChange={(e) => setSelectedColumn(e.target.value)}>
+                    <select value={selectedColumn} onChange={(e) => handleColumnChange(e.target.value)}>
                         <option value="">-- Select Column --</option>
                         {information.cols.map(col => (
                             <option key={col} value={col}>{col}</option>
                         ))}
                     </select>
 
-                    <select value={dataType} onChange={(e) => {
-                        setDataType(e.target.value);
-                        setPlotType(e.target.value === 'categorical' ? 'countplot' : 'histogram');
-                    }}>
-                        <option value="categorical">Categorical</option>
-                        <option value="numerical">Numerical</option>
-                    </select>
+                    {/* Display detected data type */}
+                    {selectedColumn && (
+                        <div className="mt-2 text-sm text-gray-600">
+                            Detected Type: <span className="font-semibold capitalize">{dataType}</span>
+                        </div>
+                    )}
 
                     <select value={plotType} onChange={(e) => setPlotType(e.target.value)}>
                         {dataType === 'categorical' ? (
@@ -144,6 +164,7 @@ function EDASL() {
                 </div>
             }
 
+            
             {information && <MultivariateTool columns={information.cols} />}
             {information && console.log("information:", information)}
             {information && <MissingValueHandler information={information} />}
@@ -222,15 +243,82 @@ function Details({ info }) {
     );
 }
 
-
-function MultivariateTool({ columns }) {
-    const [type1, setType1] = React.useState('numerical');
-    const [type2, setType2] = React.useState('numerical');
+function MultivariateTool({ columns, data }) {
     const [type3, setType3] = React.useState('scatterplot');
     const [x, setX] = React.useState('');
     const [y, setY] = React.useState('');
     const [cols, setCols] = React.useState([]);
     const [plotData, setPlotData] = React.useState(null);
+    const [availablePlotTypes, setAvailablePlotTypes] = React.useState([]);
+
+    // Function to detect data type of a column
+    const detectDataType = (columnName) => {
+        if (!data || data.length === 0) return 'numerical';
+        
+        const sampleValues = data.slice(0, 100).map(row => row[columnName]).filter(val => val != null && val !== '');
+        
+        if (sampleValues.length === 0) return 'numerical';
+        
+        // Check if all values are numbers
+        const numericValues = sampleValues.filter(val => !isNaN(val) && !isNaN(parseFloat(val)));
+        
+        // If more than 80% are numeric, consider it numerical
+        if (numericValues.length / sampleValues.length > 0.8) {
+            return 'numerical';
+        } else {
+            return 'categorical';
+        }
+    };
+
+    // Function to get available plot types based on selected columns
+    const getAvailablePlotTypes = (xCol, yCol, selectedCols) => {
+        const plotTypes = [];
+        
+        if (selectedCols.length >= 2) {
+            plotTypes.push({ value: 'pairplot', label: 'Pairplot' });
+            plotTypes.push({ value: 'heatmap', label: 'Heatmap' });
+            plotTypes.push({ value: 'clustermap', label: 'Clustermap' });
+        }
+        
+        if (xCol && yCol) {
+            const xType = detectDataType(xCol);
+            const yType = detectDataType(yCol);
+            
+            if (xType === 'numerical' && yType === 'numerical') {
+                plotTypes.push({ value: 'scatterplot', label: 'Scatterplot' });
+                plotTypes.push({ value: 'lineplot', label: 'Lineplot' });
+            }
+            
+            if (xType === 'categorical' || yType === 'categorical') {
+                plotTypes.push({ value: 'barplot', label: 'Barplot' });
+                plotTypes.push({ value: 'boxplot', label: 'Boxplot' });
+            }
+            
+            if (xType === 'numerical' || yType === 'numerical') {
+                plotTypes.push({ value: 'displot', label: 'Displot' });
+            }
+        }
+        
+        // Remove duplicates
+        const uniquePlotTypes = plotTypes.filter((plot, index, self) => 
+            index === self.findIndex(p => p.value === plot.value)
+        );
+        
+        return uniquePlotTypes;
+    };
+
+    // Update available plot types when columns change
+    React.useEffect(() => {
+        const newPlotTypes = getAvailablePlotTypes(x, y, cols);
+        setAvailablePlotTypes(newPlotTypes);
+        
+        // If current plot type is not available, reset to first available
+        if (newPlotTypes.length > 0 && !newPlotTypes.some(plot => plot.value === type3)) {
+            setType3(newPlotTypes[0].value);
+        }
+        
+        console.log('Columns updated:', { x, y, cols, availablePlotTypes: newPlotTypes });
+    }, [x, y, cols]);
 
     async function fetchMultivariate() {
         const payload = {
@@ -242,20 +330,27 @@ function MultivariateTool({ columns }) {
         if (type3 === 'pairplot') {
             payload.chosen_cols.cols = cols;
         } else {
-            payload.type1 = type1;
-            payload.type2 = type2;
+            payload.type1 = detectDataType(x);
+            payload.type2 = detectDataType(y);
             payload.chosen_cols.x = x;
             payload.chosen_cols.y = y;
         }
 
-        const response = await fetch('/multivariate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        console.log('Sending payload:', payload);
 
-        const result = await response.json();
-        setPlotData(result);
+        try {
+            const response = await fetch('/multivariate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            console.log('Received result:', result);
+            setPlotData(result);
+        } catch (error) {
+            console.error('Error fetching multivariate data:', error);
+        }
     }
 
     React.useEffect(() => {
@@ -330,65 +425,121 @@ function MultivariateTool({ columns }) {
 
     }, [plotData]);
 
+    const handleColumnSelection = (e, isMultiple = false) => {
+        if (isMultiple) {
+            const selected = Array.from(e.target.selectedOptions, o => o.value);
+            setCols(selected);
+            console.log('Selected columns for pairplot:', selected);
+        }
+    };
+
+    const handleXChange = (e) => {
+        const value = e.target.value;
+        setX(value);
+        console.log('X column changed to:', value);
+    };
+
+    const handleYChange = (e) => {
+        const value = e.target.value;
+        setY(value);
+        console.log('Y column changed to:', value);
+    };
+
+    const handlePlotTypeChange = (e) => {
+        const value = e.target.value;
+        setType3(value);
+        setX('');
+        setY('');
+        setCols([]);
+        console.log('Plot type changed to:', value);
+    };
+
     return (
-        <div className="variate-ui">
-            <h3>Bivariate Analysis</h3>
+        <div className="variate-ui" style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+            <h3>Multivariate Analysis</h3>
 
-            <label>Type 3 (Plot Type):</label>
-            <select value={type3} onChange={(e) => {
-                setType3(e.target.value);
-                setX('');
-                setY('');
-                setCols([]);
-            }}>
-                <option value="scatterplot">Scatterplot</option>
-                <option value="lineplot">Lineplot</option>
-                <option value="barplot">Barplot</option>
-                <option value="boxplot">Boxplot</option>
-                <option value="displot">Displot</option>
-                <option value="pairplot">Pairplot</option>
-                <option value="heatmap">Heatmap</option>
-                <option value="clustermap">Clustermap</option>
-            </select>
+            <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                    Plot Type:
+                </label>
+                <select 
+                    value={type3} 
+                    onChange={handlePlotTypeChange}
+                    style={{ padding: '8px', minWidth: '200px' }}
+                >
+                    {availablePlotTypes.length === 0 ? (
+                        <option value="">Select columns first</option>
+                    ) : (
+                        availablePlotTypes.map(plot => (
+                            <option key={plot.value} value={plot.value}>
+                                {plot.label}
+                            </option>
+                        ))
+                    )}
+                </select>
+            </div>
 
-            {type3 !== 'pairplot' && (
-                <>
-                    <label>Type 1:</label>
-                    <select value={type1} onChange={(e) => setType1(e.target.value)}>
-                        <option value="numerical">Numerical</option>
-                        <option value="categorical">Categorical</option>
-                    </select>
+            {type3 !== 'pairplot' && type3 !== 'heatmap' && type3 !== 'clustermap' && (
+                <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                            X Axis:
+                        </label>
+                        <select 
+                            value={x} 
+                            onChange={handleXChange}
+                            style={{ padding: '8px', minWidth: '150px' }}
+                        >
+                            <option value="">Select X</option>
+                            {columns.map(col => (
+                                <option key={col} value={col}>
+                                    {col} ({detectDataType(col)})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
 
-                    <label>Type 2:</label>
-                    <select value={type2} onChange={(e) => setType2(e.target.value)}>
-                        <option value="numerical">Numerical</option>
-                        <option value="categorical">Categorical</option>
-                    </select>
-
-                    <label>X Axis:</label>
-                    <select value={x} onChange={(e) => setX(e.target.value)}>
-                        <option value="">Select X</option>
-                        {columns.map(col => <option key={col}>{col}</option>)}
-                    </select>
-
-                    <label>Y Axis:</label>
-                    <select value={y} onChange={(e) => setY(e.target.value)}>
-                        <option value="">Select Y</option>
-                        {columns.map(col => <option key={col}>{col}</option>)}
-                    </select>
-                </>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                            Y Axis:
+                        </label>
+                        <select 
+                            value={y} 
+                            onChange={handleYChange}
+                            style={{ padding: '8px', minWidth: '150px' }}
+                        >
+                            <option value="">Select Y</option>
+                            {columns.map(col => (
+                                <option key={col} value={col}>
+                                    {col} ({detectDataType(col)})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
             )}
 
-            {type3 === 'pairplot' && (
-                <>
-                    <label>Select Columns for Pairplot:</label>
-                    <select multiple onChange={(e) => {
-                        const selected = Array.from(e.target.selectedOptions, o => o.value);
-                        setCols(selected);
-                    }}>
-                        {columns.map(col => <option key={col}>{col}</option>)}
+            {(type3 === 'pairplot' || type3 === 'heatmap' || type3 === 'clustermap') && (
+                <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                        Select Columns:
+                    </label>
+                    <select 
+                        multiple 
+                        onChange={(e) => handleColumnSelection(e, true)}
+                        style={{ padding: '8px', minWidth: '300px', height: '120px' }}
+                        value={cols}
+                    >
+                        {columns.map(col => (
+                            <option key={col} value={col}>
+                                {col} ({detectDataType(col)})
+                            </option>
+                        ))}
                     </select>
-                </>
+                    <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
+                        Hold Ctrl/Cmd to select multiple columns
+                    </div>
+                </div>
             )}
 
             <button
@@ -396,6 +547,20 @@ function MultivariateTool({ columns }) {
                 onClick={(e) => {
                     e.preventDefault();
                     fetchMultivariate();
+                }}
+                disabled={
+                    (type3 === 'pairplot' || type3 === 'heatmap' || type3 === 'clustermap') 
+                        ? cols.length < 2 
+                        : !x || !y
+                }
+                style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#007bff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px'
                 }}
             >
                 Generate Multivariate Plot
@@ -405,7 +570,6 @@ function MultivariateTool({ columns }) {
         </div>
     );
 }
-
 
 function MissingValueHandler({ information }) {
     if (!information || !information.cols || !information['null values'] || !information.types)
