@@ -70,13 +70,13 @@ function Classification() {
                 <option value = "xgb">XGBoost Classifier</option>
                 <option value = "gaussian_nb">Gaussian Naive Bayes</option>
                 <option value = "multinomial_nb">Multinomial Naive Bayes</option>
-                <option value = "bernoulii_nb">Bernoulii Naive Bayes</option>
+                {/* <option value = "bernoulii_nb">Bernoulii Naive Bayes</option> */}
                 <option value = "linear_svm">Linear Support Vector Classifier</option>
                 <option value = "kernel_svm">Kernel Support Vector Classifier</option>
                 <option value = "voting">Voting Classifier</option>
                 <option value = "bagging">Bagging Classifier</option>
                 <option value = "adaboost">AdaBoost Classifier</option>
-                <option value = "ann">MLP Classifier</option>
+                {/* <option value = "ann">MLP Classifier</option> */}
             </select><br /><br />
             <label>Hyperparameter Tuning: </label>
             <select id = "classTuning"> 

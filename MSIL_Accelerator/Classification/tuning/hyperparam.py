@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-def hyperparams(model):
-    if model == 'LogisticRegression()':
+def hyperparams(model_name):
+    if model_name == 'LogisticRegression':
         return {
             'penalty': ['l1', 'l2', 'elasticnet', 'none'],
             'C': [0.01, 0.1, 1, 10],
@@ -13,7 +13,7 @@ def hyperparams(model):
             'random_state': [42]
         }
 
-    if model == 'DecisionTreeClassifier()':
+    if model_name == 'DecisionTreeClassifier':
         return {
             'criterion': ['gini', 'entropy', 'log_loss'],
             'max_depth': [None, 10, 20, 50],
@@ -24,7 +24,7 @@ def hyperparams(model):
             'random_state': [42]
         }
 
-    if model == 'RandomForestClassifier()':
+    if model_name == 'RandomForestClassifier':
         return {
             'n_estimators': [100, 200, 500],
             'max_depth': [None, 10, 20],
@@ -36,7 +36,7 @@ def hyperparams(model):
             'random_state': [42]
         }
 
-    if model == 'GradientBoostingClassifier()':
+    if model_name == 'GradientBoostingClassifier':
         return {
             'n_estimators': [100, 200],
             'learning_rate': [0.01, 0.1, 0.2],
@@ -48,7 +48,7 @@ def hyperparams(model):
             'random_state': [42]
         }
 
-    if model == 'xgb.XGBClassifier()':
+    if model_name == 'XGBClassifier':
         return {
             'n_estimators': [100, 200],
             'learning_rate': [0.01, 0.1],
@@ -63,25 +63,25 @@ def hyperparams(model):
             'random_state': [42]
         }
 
-    if model == 'GaussianNB()':
+    if model_name == 'GaussianNB':
         return {
             'var_smoothing': [1e-11, 1e-9, 1e-7, 1e-5, 1e-3]
         }
 
-    if model == 'MultinomialNB()':
+    if model_name == 'MultinomialNB':
         return {
             'alpha': [0.0, 0.1, 0.5, 1.0],
             'fit_prior': [True, False]
         }
 
-    if model == 'BernoulliNB()':
-        return {
-            'alpha': [0.0, 0.1, 0.5, 1.0],
-            'binarize': [0.0, 0.5, 1.0],
-            'fit_prior': [True, False]
-        }
+    # if model_name == 'BernoulliNB':
+    #     return {
+    #         'alpha': [0.0, 0.1, 0.5, 1.0],
+    #         'binarize': [0.0, 0.5, 1.0],
+    #         'fit_prior': [True, False]
+    #     }
 
-    if model == 'SVC_linear':
+    if model_name == 'LinearSVC':
         return {
             'C': [0.1, 1, 10],
             'tol': [1e-3, 1e-4],
@@ -89,7 +89,7 @@ def hyperparams(model):
             'max_iter': [1000, 5000]
         }
 
-    if model == 'SVC_rbf':
+    if model_name == 'SVC':
         return {
             'C': [0.1, 1, 10],
             'gamma': ['scale', 'auto', 0.01, 0.1],
@@ -98,13 +98,12 @@ def hyperparams(model):
             'max_iter': [1000, 5000]
         }
 
-    if model == 'VotingClassifier()':
+    if model_name == 'VotingClassifier':
         return {
-            'voting': ['hard', 'soft'],
-            # Note: estimators passed directly when instantiating, not as hyperparams
+            'voting': ['hard', 'soft']
         }
 
-    if model == 'BaggingClassifier()':
+    if model_name == 'BaggingClassifier':
         return {
             'n_estimators': [10, 50, 100],
             'max_samples': [0.5, 0.7, 1.0],
@@ -114,7 +113,7 @@ def hyperparams(model):
             'random_state': [42]
         }
 
-    if model == 'AdaBoostClassifier()':
+    if model_name == 'AdaBoostClassifier':
         return {
             'n_estimators': [50, 100, 200],
             'learning_rate': [0.01, 0.1, 1.0],
@@ -122,16 +121,20 @@ def hyperparams(model):
             'random_state': [42]
         }
 
-    if model == 'MLPClassifier()':
-        return {
-            'hidden_layer_sizes': [(50,), (100,), (50, 50)],
-            'activation': ['relu', 'tanh'],
-            'solver': ['adam', 'sgd'],
-            'alpha': [0.0001, 0.001],
-            'learning_rate': ['constant', 'adaptive'],
-            'max_iter': [200, 500],
-            'random_state': [42]
-        }
+    # if model_name == 'MLPClassifier':
+    #     return {
+    #         'hidden_layer_sizes': [(50,), (100,), (50, 50)],
+    #         'activation': ['relu', 'tanh'],
+    #         'solver': ['adam', 'sgd'],
+    #         'alpha': [0.0001, 0.001],
+    #         'learning_rate': ['constant', 'adaptive'],
+    #         'max_iter': [200, 500],
+    #         'random_state': [42]
+    #     }
+
+    # Safety fallback
+    return {}
+
 def visualize_results(search_obj, param_name, buffer):
     """
     Visualizes how a single hyperparameter affects the model's mean cross-validation score.
@@ -149,13 +152,20 @@ def visualize_results(search_obj, param_name, buffer):
     results = pd.DataFrame(search_obj.cv_results_)
 
     # Handle case where 'param_' prefix is added in cv_results_
-    if param_name not in results.columns and f'param_{param_name}' in results.columns:
+    # if param_name not in results.columns and f'param_{param_name}' in results.columns:
+    #     param_name = f'param_{param_name}'
+
+    # # Raise error if parameter still not found
+    # if param_name not in results.columns:
+    #     raise ValueError(f"Parameter '{param_name}' not found in search results.")
+
+    if f'param_{param_name}' in results.columns:
         param_name = f'param_{param_name}'
-
-    # Raise error if parameter still not found
-    if param_name not in results.columns:
+    elif param_name in results.columns:
+        pass
+    else:
+        print("Available columns:", results.columns.tolist())
         raise ValueError(f"Parameter '{param_name}' not found in search results.")
-
     # Plot mean CV score vs parameter
     plt.figure(figsize=(8, 5))
     plt.plot(results[param_name], results['mean_test_score'], marker='o')

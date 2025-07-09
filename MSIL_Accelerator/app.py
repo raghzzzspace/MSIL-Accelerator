@@ -6,15 +6,15 @@ from flask import Flask, request, Response, send_file
 import pandas as pd
 import io
 from TS.TS import (
-    perform_time_series_eda,
     preprocess_time_series,
+    ARIMAModel,
+    ProphetModel,
+    LinearTimeSeriesModel,
     get_model,
-    hyperparams,
-    tune_model,
-    forecast_metrics,
-    visualize_results,
-    logger
+    split_time_series,
+    forecast_metrics
 )
+
 from requests_toolbelt.multipart import MultipartEncoder
 import json
 from Regressor.utils.metrics import regression_metrics
@@ -133,7 +133,9 @@ def trainModel(model):
 
         model = ClassificationModel.get_model(data['model'], task='classification')
 
-        param_grid = ClassificationTuning.hyperparams(str(model))
+        # param_grid = ClassificationTuning.hyperparams(str(model))
+        param_grid = ClassificationTuning.hyperparams(model.__class__.__name__)
+        print(param_grid)
 
         def tune_model(model, param_grid, X_train, y_train, scoring='accuracy', operation='GridSearchCV', cv=5):
             if operation == 'GridSearchCV':
@@ -159,11 +161,35 @@ def trainModel(model):
                 return model, model.get_params(), None
             
         tuned_model, best_params, tuned_obj = tune_model(model, param_grid, X_train, y_train, operation = data['tuning'])
-        
-        buffer = io.BytesIO()
-        ClassificationTuning.visualize_results(tuned_obj, param_name='C', buffer = buffer)  # Change this param based on model
-        buffer.seek(0)
 
+
+                # Mapping from model class name to key hyperparameter for visualization
+        param_name_map = {
+            'LogisticRegression': 'C',
+            'DecisionTreeClassifier': 'max_depth',
+            'RandomForestClassifier': 'n_estimators',
+            'GradientBoostingClassifier': 'n_estimators',
+            'XGBClassifier': 'n_estimators',
+            'GaussianNB': 'var_smoothing',
+            'MultinomialNB': 'alpha',
+            'LinearSVC': 'C',
+            'SVC': 'C',
+            'VotingClassifier': None,
+            'BaggingClassifier': 'n_estimators',
+            'AdaBoostClassifier': 'n_estimators',
+        }
+
+        model_name = tuned_model.__class__.__name__
+        param_to_visualize = param_name_map.get(model_name)
+
+        buffer = io.BytesIO()
+        if tuned_obj is not None and param_to_visualize:
+            ClassificationTuning.visualize_results(tuned_obj, param_name=param_to_visualize, buffer=buffer)
+            buffer.seek(0)
+        else:
+            buffer = None
+
+            
         # ClassificationTuning.logger(str(tuned_model), best_params)
 
         model = tuned_model.fit(X_train, y_train)
@@ -516,72 +542,71 @@ def download_file():
         as_attachment=True,
         download_name='preprocessed_dataset.csv'
     )
-@app.post('/train/timeseries')
+
+def split_time_series(df, target_col, test_size=30):
+    test_size = min(test_size, len(df) // 3)
+    X = np.arange(len(df)).reshape(-1, 1)
+    y = df[target_col].values
+    return X[:-test_size], X[-test_size:], y[:-test_size], y[-test_size:]
+
+from flask import Flask, request, jsonify
+import io
+@app.route('/train/timeseries', methods=['POST'])
 def train_timeseries():
-    global df
-    data = request.get_json(force=True)
+    data = request.get_json()
+    csv_data = data['csv']               # CSV as string
     datetime_col = data['datetime_col']
     target_col = data['target_col']
     model_name = data['model']
-    #tuning_strategy = data['tuning']
 
+    df = pd.read_csv(io.StringIO(csv_data))
+    df = preprocess_time_series(df, datetime_col, target_col)
+
+    X_train, X_test, y_train, y_test = split_time_series(df, target_col)
+    model = get_model(model_name)
+
+    if model_name == 'prophet':
+        model.fit(df[datetime_col].iloc[:-len(X_test)].to_frame(), y_train)
+        forecast = model.predict(df[datetime_col].iloc[-len(X_test):].to_frame())
+    elif model_name == 'linear':
+        model.fit(X_train, y_train)
+        forecast = model.predict(X_test)
+    else:  # ARIMA
+        model.fit(y_train)
+        forecast = model.predict(len(X_test))
+
+    metrics_dict = forecast_metrics(y_test, forecast)
+    forecast_dates = df[datetime_col].iloc[-len(X_test):]
+
+    return jsonify({
+        "forecast": forecast.tolist(),
+        "actual": y_test.tolist(),
+        "dates": pd.to_datetime(forecast_dates).astype(str).tolist(),
+        "metrics": metrics_dict,
+        "model": model_name
+    })
+
+from flask import request, jsonify
+import pandas as pd
+import io
+
+@app.route('/parse/csv', methods=['POST'])
+def parse_csv():
     try:
-        if df['timeseries'] is None:
-            return {"error": "No time series dataset uploaded"}, 400
+        data = request.get_json(force=True)
+        csv_data = data.get('csv', '')
 
-        df_raw = df['timeseries'].copy()
-        df_eda = perform_time_series_eda(df_raw.copy(), datetime_col, target_col)
+        # Check if empty
+        if not csv_data.strip():
+            return jsonify({'error': 'CSV data is empty'}), 400
 
-        df_processed = preprocess_time_series(df_raw, datetime_col, target_col)
-
-        X = df_processed.drop(columns=[target_col, datetime_col])
-        y = df_processed[target_col]
-
-        test_size = 30
-        X_train, X_test = X[:-test_size], X[-test_size:]
-        y_train, y_test = y[:-test_size], y[-test_size:]
-
-        model = get_model(model_name)
-        param_grid = hyperparams(model_name)
-
-        if len(X_train) < 3 or len(param_grid) == 0:
-            tuned_model = model
-            best_params = model.get_params() if hasattr(model, 'get_params') else {}
-            tuned_obj = None
-        else:
-            tuned_model, best_params, tuned_obj = tune_model(
-                model, param_grid, X_train, y_train,
-                operation='RandomizedSearchCV',
-                cv=min(3, len(X_train))
-            )
-
-        tuned_model.fit(X_train, y_train)
-        y_pred = tuned_model.predict(X_test)
-
-        metrics = forecast_metrics(y_test, y_pred)
-        metrics['num'] = 1
-
-        buffer = io.BytesIO()
-        visualize_results(tuned_obj)
-        buffer.seek(0)
-
-        m = MultipartEncoder(fields={
-            'metrics': json.dumps(metrics),
-            'graph': ('forecastGraph.png', buffer, 'image/png')
-        })
-        return Response(m.to_string(), mimetype=m.content_type)
-
+        # Parse CSV
+        df = pd.read_csv(io.StringIO(csv_data))
+        return jsonify({'columns': df.columns.tolist()})
+    
     except Exception as e:
-        return {"error": str(e)}, 500
-
-@app.post('/upload/timeseries')
-def upload_timeseries():
-    global df
-    try:
-        df['timeseries'] = pd.read_csv(request.files['dataset'])
-        return {'cols': df['timeseries'].columns.tolist()}
-    except Exception as e:
-        return {'error': str(e)}, 500
+        print("Error in /parse/csv:", str(e))
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
